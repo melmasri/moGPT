@@ -21,7 +21,7 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
 
-    def forward(self, idx, target):
+    def forward(self, idx):
 
         logits = self.token_embedding_table(idx) # (B, T, C)
         return logits

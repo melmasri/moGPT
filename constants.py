@@ -9,3 +9,5 @@ INPUT_DATA_FOLDER = os.path.join('data', DATASET)
 
 BATCH_SIZE = 8
 BLOCK_SIZE = 4
+
+VOCAB_SIZE = 50304

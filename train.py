@@ -3,11 +3,13 @@ import time
 import math
 import pickle
 from contextlib import nullcontext
+from torch.nn import functional as F
 
 import numpy as np
 import torch
 
-from constants import DATASET, INPUT_DATA_FOLDER, BATCH_SIZE, BLOCK_SIZE, DEVICE_TYPE, DEVICE
+from constants import DATASET, INPUT_DATA_FOLDER, BATCH_SIZE, BLOCK_SIZE, DEVICE_TYPE, DEVICE, VOCAB_SIZE
+
 
 
 def get_batch(split):
@@ -19,7 +21,6 @@ def get_batch(split):
         data = np.memmap(os.path.join(INPUT_DATA_FOLDER, 'val.bin'), dtype=np.uint16, mode='r')
     ix = torch.randint(len(data) - BLOCK_SIZE, (BATCH_SIZE,))
     x = torch.stack([torch.from_numpy((data[i:i+BLOCK_SIZE]).astype(np.int64)) for i in ix])
-    print(x)
     y = torch.stack([torch.from_numpy((data[i+1:i+1+BLOCK_SIZE]).astype(np.int64)) for i in ix])
     if DEVICE_TYPE == 'cuda':
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
@@ -27,3 +28,31 @@ def get_batch(split):
     else:
         x, y = x.to(DEVICE), y.to(DEVICE)
     return x, y
+
+
+
+def train(model, optimizer, num_epochs):
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0.
+        start_time = time.time()
+        for batch, i in enumerate(range(0, 1000, BATCH_SIZE)):
+            data, targets = get_batch('train')
+            optimizer.zero_grad()
+            logits = model(data)
+            B, T, C = logits.shape
+            targets = targets.view(B*T)
+            logits = logits.view(B*T, C)
+            loss = F.cross_entropy(logits, targets)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            if batch % 10 == 0 and batch > 0:
+                cur_loss = total_loss / 10
+                elapsed = time.time() - start_time
+                print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+                      'loss {:5.2f} | ppl {:8.2f}'.format(
+                    epoch, batch, len(range(0, 1000, BATCH_SIZE)),
+                    elapsed * 1000 / 10, cur_loss, math.exp(cur_loss)))
+                total_loss = 0
+                start_time = time.time()
