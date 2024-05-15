@@ -1,6 +1,7 @@
 import torch 
 import torch.nn as nn
 from torch.nn import functional as F
+import math
 
 
 class LayerNorm(nn.Module):
@@ -27,4 +28,39 @@ class BigramLanguageModel(nn.Module):
         return logits
 
 
+class MultiHeadAttention(nn.Module):
+    """ Multi-head attention module implmeneted from scratch
+    
+        TODO: 
+            - Add dropout
+            - Add residual connection
+    """
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        # n_embed is a multiple of number of heads
+        assert config['n_embed'] % config['n_heads'] == 0
+        self.n_heads = config['n_heads']
+        self.n_embed = config['n_embed']
+        self.bias = config['bias']
 
+        # a single layer for all 3 quantitues, Q, K, V
+        self.W_attn = W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
+        
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        B, T, C = x.size() # batch, block size, channels (n_embed)
+        Q, K, V = self.W_attn(x).split(self.n_embed, dim=-1)
+        K = K.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
+        Q = Q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
+        V = V.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
+        d = math.sqrt(K.size(-1))
+
+        raw_weights = (Q @ K.transpose(-2, -1) / d) # (B, n heads, T, n seq) x (B, n heads, n seq, T) --> (B, n heads, T, T)
+        weights = F.softmax(raw_weights, dim=-1)
+
+        # (B, n heads, T, T) x (B, n heads, T, n seq) --> (B, n heads, T, n seq)
+        out = (weights @ V).transpose(1, 2).contiguous().view(B, T, C)
+        return out
+
+mha = MultiHeadAttention(config)
+mha(tx).shape
