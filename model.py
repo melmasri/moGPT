@@ -30,9 +30,11 @@ class BigramLanguageModel(nn.Module):
 
 class MultiHeadAttention(nn.Module):
     """ Multi-head attention module implmeneted from scratch
-    
-        TODO: 
-            - Add residual connection
+
+        Follow Attention is All You Need paper: https://arxiv.org/pdf/1706.03762
+
+        - Can add a dropout at the last stage, after the linear layer
+
     """
     def __init__(self, config: dict) -> None:
         super().__init__()
@@ -45,6 +47,7 @@ class MultiHeadAttention(nn.Module):
 
         # a single layer for all 3 quantitues, Q, K, V
         self.W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
+        self.L_atten = nn.Linear(self.n_embed, self.n_embed, bias=self.bias)
         self.att_dropout = nn.Dropout(self.dropout)
         
 
@@ -62,4 +65,42 @@ class MultiHeadAttention(nn.Module):
         # (B, n heads, T, T) x (B, n heads, T, n seq) --> (B, n heads, T, n seq)
         weights = self.att_dropout(weights)
         out = (weights @ V).transpose(1, 2).contiguous().view(B, T, C)
+
+        # Final linear layer
+        out = self.L_atten(out)
         return out
+
+
+class MLP(nn.Module): 
+    """ Feed forward network """
+
+    def __init__(self, config: dict) -> None:
+        super().__init__()
+        self.n_embed = config['n_embed']
+        self.bias = config['bias']
+        self.dropout = config['dropout']
+
+        self.fc1 = nn.Linear(self.n_embed, 4 * self.n_embed, bias=self.bias)
+        self.fc2 = nn.Linear(4 * self.n_embed, self.n_embed, bias=self.bias)
+        self.dropout = nn.Dropout(self.dropout)
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        x = self.fc1(x)
+        x = F.gelu(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        return x
+
+class TransformerBlock(nn.Module):
+    """ Transformers are made of a number of these blocks"""
+
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.attn = MultiHeadAttention(config)
+        self.ln= LayerNorm(config['n_embed'], bias=config['bias'])
+        self.mlp= MLP(config) # Feed forward network
+
+    def forward(self, x) -> torch.tensor:
+        x = x + self.attn(x)
+        x = x + self.mlp(self.l(x))
+        return x
