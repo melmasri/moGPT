@@ -50,9 +50,6 @@ def train(model, optimizer, num_epochs):
             if batch % 10 == 0 and batch > 0:
                 cur_loss = total_loss / 10
                 elapsed = time.time() - start_time
-                print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                      'loss {:5.2f} | ppl {:8.2f}'.format(
-                    epoch, batch, len(range(0, 1000, BATCH_SIZE)),
-                    elapsed * 1000 / 10, cur_loss, math.exp(cur_loss)))
+                print(f"{epoch=}, {batch=}, {elapsed=},{cur_loss=:0.3f}")
                 total_loss = 0
                 start_time = time.time()
