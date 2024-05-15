@@ -29,8 +29,10 @@ encoding = tiktoken.get_encoding("gpt2")
 train_tokens = encoding.encode_ordinary(train_data)
 val_tokens = encoding.encode_ordinary(val_data)
 
-print(f"train has {len(train_tokens):,} tokens")
-print(f"val has {len(val_tokens):,} tokens")
+print(f"train has {len(train_tokens):,} tokens, over a set of {len(set(train_tokens)):,} unique tokens")
+print(f"val has {len(val_tokens):,} tokens, over a set of {len(set(val_tokens)):,} unique tokens")
+
+print(f"number of unique tokens in val: {len(set(val_tokens) - set(train_tokens))}")
 
 print('Snapshot of train tokens:')
 print(train_tokens[:100])
