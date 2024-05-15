@@ -32,7 +32,6 @@ class MultiHeadAttention(nn.Module):
     """ Multi-head attention module implmeneted from scratch
     
         TODO: 
-            - Add dropout
             - Add residual connection
     """
     def __init__(self, config: dict) -> None:
@@ -42,9 +41,11 @@ class MultiHeadAttention(nn.Module):
         self.n_heads = config['n_heads']
         self.n_embed = config['n_embed']
         self.bias = config['bias']
+        self.dropout = config['dropout']
 
         # a single layer for all 3 quantitues, Q, K, V
-        self.W_attn = W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
+        self.W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
+        self.att_dropout = nn.Dropout(self.dropout)
         
 
     def forward(self, x: torch.tensor) -> torch.tensor:
@@ -59,8 +60,6 @@ class MultiHeadAttention(nn.Module):
         weights = F.softmax(raw_weights, dim=-1)
 
         # (B, n heads, T, T) x (B, n heads, T, n seq) --> (B, n heads, T, n seq)
+        weights = self.att_dropout(weights)
         out = (weights @ V).transpose(1, 2).contiguous().view(B, T, C)
         return out
-
-mha = MultiHeadAttention(config)
-mha(tx).shape
