@@ -14,4 +14,8 @@ N_LAYERS = 12
 N_EMBED = 768
 N_HEADS = 12
 BIAS = False
-DROP_OUT = 0.0
+DROP_OUT = 0.1
+
+
+
+wandb_config = 
