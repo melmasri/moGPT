@@ -22,5 +22,5 @@ DROP_OUT = 0.1
 #### -- wandb -- ####
 WANDB_PROJECT = 'gpt2'
 WANDB_LOG = True
-WANDB_key = ''
+WANDB_KEY = ''
 WANDB_RUN_NAME = 'mogpt'
