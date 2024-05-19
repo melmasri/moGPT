@@ -17,5 +17,3 @@ BIAS = False
 DROP_OUT = 0.1
 
 
-
-wandb_config = 

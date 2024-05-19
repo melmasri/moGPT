@@ -44,11 +44,15 @@ class MultiHeadAttention(nn.Module):
         self.n_embed = config['n_embed']
         self.bias = config['bias']
         self.dropout = config['dropout']
+        self.block_size = config['block_size']
 
         # a single layer for all 3 quantitues, Q, K, V
         self.W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
         self.L_atten = nn.Linear(self.n_embed, self.n_embed, bias=self.bias)
         self.att_dropout = nn.Dropout(self.dropout)
+
+        self.causal_mask = torch.tril(torch.ones(self.block_size, 
+                              self.block_size)).view(1, 1, self.block_size, self.block_size)
         
 
     def forward(self, x: torch.tensor) -> torch.tensor:
@@ -60,6 +64,7 @@ class MultiHeadAttention(nn.Module):
         d = math.sqrt(K.size(-1))
 
         raw_weights = (Q @ K.transpose(-2, -1) / d) # (B, n heads, T, n seq) x (B, n heads, n seq, T) --> (B, n heads, T, T)
+        raw_weights = raw_weights.masked_fill(self.causal_mask == 0, float('-inf'))
         weights = F.softmax(raw_weights, dim=-1)
 
         # (B, n heads, T, T) x (B, n heads, T, n seq) --> (B, n heads, T, n seq)
@@ -102,5 +107,85 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x) -> torch.tensor:
         x = x + self.attn(x)
-        x = x + self.mlp(self.l(x))
+        x = x + self.mlp(self.ln(x))
         return x
+    
+
+
+class GPT(nn.Module): 
+    """ GPT model"""
+    def __init__(self, config) -> None:
+        super().__init__()
+        assert config is not None
+
+        self.n_layers = config['n_layers']
+        self.n_embed = config['n_embed']
+        self.n_heads = config['n_heads']
+        self.bias = config['bias']
+        self.dropout = config['dropout']
+        self.vocab_size = config['vocab_size']
+        self.block_size = config['block_size']
+
+        self.token_embedding_table = nn.Embedding(self.vocab_size, self.n_embed)
+        self.pos_embedding_table = nn.Embedding(self.block_size, self.n_embed)
+        self.dropout = nn.Dropout(self.dropout)
+
+        self.transformer = nn.ModuleDict(dict(
+            blocks = nn.ModuleList([TransformerBlock(config) for _ in range(self.n_layers)]), 
+            ln_f = LayerNorm(self.n_embed, bias=self.bias)))
+        
+        self.lm_head = nn.Linear(self.n_embed, self.vocab_size, bias=False)
+
+        print(f"number of parameters: {self.get_num_params()/1e6:.2f}M")
+
+    def forward(self, idx: torch.tensor) -> torch.tensor:
+        B, T = idx.size() 
+        device = idx.device           
+
+        # Token and position embeddings
+        token_embed = self.token_embedding_table(idx)
+        pos_embed = self.pos_embedding_table(torch.arange(T, device=device, dtype=torch.long))
+
+        x = token_embed + pos_embed
+        x = self.dropout(x)
+        for block in self.transformer.blocks:
+            x = block(x)
+
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x)
+        return logits
+
+    def get_num_params(self) -> int:
+        """
+        Returns the number of parameters in the model without embedding
+
+        We substract the position embeddings. 
+        """
+        n_params = sum(p.numel() for p in self.parameters())
+        n_params -= sum(p.numel() for p in self.token_embedding_table.parameters())
+        return n_params
+
+
+    @torch.no_grad()
+    def predict_next(self, x: torch.tensor, num_tokens: int) -> torch.tensor:
+        """ Predict the next token given a sequence of tokens
+
+            num_tokens: number of tokens to predict
+        """
+        for _ in range(num_tokens):
+            x_cond = x if x.size(1) <= self.block_size else x[:, -self.block_size:]
+            logits = self(x_cond)
+            probs = F.softmax(logits[:, -1, :], dim=-1) # extract the last token
+
+            # sample from the distribution
+            x_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            x = torch.cat((x, x_next), dim=1)
+
+        return x
+
+
+
+
+
+
