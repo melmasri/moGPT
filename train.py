@@ -4,6 +4,10 @@ import math
 import pickle
 from contextlib import nullcontext
 from torch.nn import functional as F
+import wandb
+
+from constants import WANDB_PROJECT, WANDB_LOG,WANDB_KEY, WANDB_RUN_NAME
+
 
 import numpy as np
 import torch
@@ -11,6 +15,21 @@ import torch
 from constants import DATASET, INPUT_DATA_FOLDER, BATCH_SIZE, BLOCK_SIZE, DEVICE_TYPE, DEVICE, VOCAB_SIZE
 
 
+def wandb_init(model):
+    if WANDB_LOG:
+        wandb.init(project=WANDB_PROJECT, name=WANDB_RUN_NAME, entity='wandb', reinit=True)
+        wandb.config.update({
+            'DATASET': DATASET,
+            'BATCH_SIZE': BATCH_SIZE,
+            'BLOCK_SIZE': BLOCK_SIZE,
+            'VOCAB_SIZE': VOCAB_SIZE,
+            'DEVICE_TYPE': DEVICE_TYPE,
+            'DEVICE': DEVICE,
+        })
+        if WANDB_KEY:
+            os.environ["WANDB_API_KEY"] = WANDB_KEY
+        wandb.watch(model)
+        
 
 def get_batch(split):
     # We recreate np.memmap every batch to avoid a memory leak, as per
@@ -32,6 +51,7 @@ def get_batch(split):
 
 
 def train(model, optimizer, num_epochs):
+    wandb_init(model)
     for epoch in range(num_epochs):
         model.train()
         total_loss = 0.
@@ -46,6 +66,8 @@ def train(model, optimizer, num_epochs):
             loss = F.cross_entropy(logits, targets)
             loss.backward()
             optimizer.step()
+            if WANDB_LOG:
+                wandb.log({'loss': loss.item()})
             total_loss += loss.item()
             if batch % 10 == 0 and batch > 0:
                 cur_loss = total_loss / 10
