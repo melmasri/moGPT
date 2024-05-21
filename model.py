@@ -3,6 +3,11 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 
+## Building GPT-2, mainly from the following papers: 
+## Language Models are Unsupervised Multitask Learners https://d4mucfpksywv.cloudfront.net/better-language-models/language-models.pdf
+## Attention is all you need https://arxiv.org/abs/1706.03762
+## Improved Language understanding by Generative Pretraining https://s3-us-west-2.amazonaws.com/openai-assets/research-covers/language-unsupervised/language_understanding_paper.pdf
+
 
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
@@ -26,6 +31,14 @@ class BigramLanguageModel(nn.Module):
 
         logits = self.token_embedding_table(idx) # (B, T, C)
         return logits
+    
+    def predict_next(self, x, num_tokens):
+        for _ in range(num_tokens):
+            logits = self(x)
+            probs = F.softmax(logits[:, -1, :], dim=-1)
+            x_next = torch.multinomial(probs, num_samples=1)
+            x = torch.cat((x, x_next), dim=1)
+        return x
 
 
 class MultiHeadAttention(nn.Module):
@@ -136,6 +149,8 @@ class GPT(nn.Module):
         
         self.lm_head = nn.Linear(self.n_embed, self.vocab_size, bias=False)
 
+        self.apply(self._init_weights)
+
         print(f"number of parameters: {self.get_num_params()/1e6:.2f}M")
 
     def forward(self, idx: torch.tensor) -> torch.tensor:
@@ -147,7 +162,6 @@ class GPT(nn.Module):
         pos_embed = self.pos_embedding_table(torch.arange(T, device=device, dtype=torch.long))
 
         x = token_embed + pos_embed
-        x = self.dropout(x)
         for block in self.transformer.blocks:
             x = block(x)
 
@@ -183,6 +197,15 @@ class GPT(nn.Module):
             x = torch.cat((x, x_next), dim=1)
 
         return x
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding): 
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
 
 
 
