@@ -60,8 +60,9 @@ class MultiHeadAttention(nn.Module):
         self.block_size = config['block_size']
 
         # a single layer for all 3 quantitues, Q, K, V
-        self.W_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
-        self.L_atten = nn.Linear(self.n_embed, self.n_embed, bias=self.bias)
+        # usig c_attn and c_proj names to align with GPT-2 pre-trained hugging face model
+        self.c_attn = nn.Linear(self.n_embed, 3 * self.n_embed, bias=self.bias)
+        self.c_proj = nn.Linear(self.n_embed, self.n_embed, bias=self.bias)
         self.att_dropout = nn.Dropout(self.dropout)
 
         self.causal_mask = torch.tril(torch.ones(self.block_size, 
@@ -70,7 +71,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         B, T, C = x.size() # batch, block size, channels (n_embed)
-        Q, K, V = self.W_attn(x).split(self.n_embed, dim=-1)
+        Q, K, V = self.c_attn(x).split(self.n_embed, dim=-1)
         K = K.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
         Q = Q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
         V = V.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
@@ -85,7 +86,7 @@ class MultiHeadAttention(nn.Module):
         out = (weights @ V).transpose(1, 2).contiguous().view(B, T, C)
 
         # Final linear layer
-        out = self.L_atten(out)
+        out = self.c_proj(out)
         return out
 
 
@@ -97,15 +98,15 @@ class MLP(nn.Module):
         self.n_embed = config['n_embed']
         self.bias = config['bias']
         self.dropout = config['dropout']
-
-        self.fc1 = nn.Linear(self.n_embed, 4 * self.n_embed, bias=self.bias)
-        self.fc2 = nn.Linear(4 * self.n_embed, self.n_embed, bias=self.bias)
+        # using c_fc and c_proj names to align with GPT-2 in hugging face
+        self.c_fc = nn.Linear(self.n_embed, 4 * self.n_embed, bias=self.bias)
+        self.c_proj = nn.Linear(4 * self.n_embed, self.n_embed, bias=self.bias)
         self.dropout = nn.Dropout(self.dropout)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
-        x = self.fc1(x)
+        x = self.c_fc(x)
         x = F.gelu(x)
-        x = self.fc2(x)
+        x = self.c_proj(x)
         x = self.dropout(x)
         return x
 
@@ -114,13 +115,17 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config) -> None:
         super().__init__()
+        self.n_embed = config['n_embed']
+        self.bias = config['bias']
+        # using names to aling with GPT-2 at HuggingFace
         self.attn = MultiHeadAttention(config)
-        self.ln= LayerNorm(config['n_embed'], bias=config['bias'])
+        self.ln_1= LayerNorm(self.n_embed, bias=self.bias)
+        self.ln_2= LayerNorm(self.n_embed, bias=self.bias)
         self.mlp= MLP(config) # Feed forward network
 
     def forward(self, x) -> torch.tensor:
-        x = x + self.attn(x)
-        x = x + self.mlp(self.ln(x))
+        x = x + self.attn(self.ln_1())
+        x = x + self.mlp(self.ln_2(x))
         return x
     
 
@@ -144,7 +149,7 @@ class GPT(nn.Module):
         self.dropout = nn.Dropout(self.dropout)
 
         self.transformer = nn.ModuleDict(dict(
-            blocks = nn.ModuleList([TransformerBlock(config) for _ in range(self.n_layers)]), 
+            h = nn.ModuleList([TransformerBlock(config) for _ in range(self.n_layers)]), 
             ln_f = LayerNorm(self.n_embed, bias=self.bias)))
         
         self.lm_head = nn.Linear(self.n_embed, self.vocab_size, bias=False)
