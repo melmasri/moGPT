@@ -230,16 +230,19 @@ class GPT(nn.Module):
         assert model_type in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], f"Model type {model_type} not supported" 
         
         model_config = {
-            'gpt2': dict(n_layers=12, 
-                   n_heads=12, 
-                   n_embed=768, 
-                   vocab_size=50257, 
-                   block_size=1024, 
-                   bias=True,   
-                   dropout=0.1)  # 124M params GPT-2
-        }
+            'gpt2':         dict(n_layers=12, n_heads=12, n_embed=768),  # 124M params
+            'gpt2-medium':  dict(n_layers=24, n_heads=16, n_embed=1024), # 350M params
+            'gpt2-large':   dict(n_layers=36, n_heads=20, n_embed=1280), # 774M params
+            'gpt2-xl':      dict(n_layers=48, n_heads=25, n_embed=1600), # 1558M params
+        } 
+
+        basic_config = dict(
+            vocab_size=50257, 
+            block_size=1024, 
+            bias=True,   
+            dropout=0.1)  # 124M params GPT-2
         
-        config = model_config[model_type]
+        config = {**model_config[model_type], **basic_config}
 
         print(f"Loading {model_type=}, with config{model_config=}")
         # loading module from hugging face
