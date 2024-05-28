@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
+from transformers import GPT2LMHeadModel
 
 ## Building GPT-2, mainly from the following papers: 
 ## Language Models are Unsupervised Multitask Learners https://d4mucfpksywv.cloudfront.net/better-language-models/language-models.pdf
@@ -76,7 +77,6 @@ class MultiHeadAttention(nn.Module):
         Q = Q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
         V = V.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2) # (B, n heads, T, n seq)
         d = math.sqrt(K.size(-1))
-
         raw_weights = (Q @ K.transpose(-2, -1) / d) # (B, n heads, T, n seq) x (B, n heads, n seq, T) --> (B, n heads, T, T)
         raw_weights = raw_weights.masked_fill(self.causal_mask == 0, float('-inf'))
         weights = F.softmax(raw_weights, dim=-1)
@@ -124,7 +124,7 @@ class TransformerBlock(nn.Module):
         self.mlp= MLP(config) # Feed forward network
 
     def forward(self, x) -> torch.tensor:
-        x = x + self.attn(self.ln_1())
+        x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
     
@@ -143,6 +143,8 @@ class GPT(nn.Module):
         self.dropout = config['dropout']
         self.vocab_size = config['vocab_size']
         self.block_size = config['block_size']
+
+        print(f"Building GPT model with config: {config}")
 
         self.token_embedding_table = nn.Embedding(self.vocab_size, self.n_embed)
         self.pos_embedding_table = nn.Embedding(self.block_size, self.n_embed)
@@ -167,7 +169,7 @@ class GPT(nn.Module):
         pos_embed = self.pos_embedding_table(torch.arange(T, device=device, dtype=torch.long))
 
         x = token_embed + pos_embed
-        for block in self.transformer.blocks:
+        for block in self.transformer.h:
             x = block(x)
 
         x = self.transformer.ln_f(x)
@@ -184,6 +186,14 @@ class GPT(nn.Module):
         n_params -= sum(p.numel() for p in self.token_embedding_table.parameters())
         return n_params
 
+    def get_config(self):
+        return dict(n_layers=self.n_layers, 
+                    n_heads=self.n_heads, 
+                    n_embed=self.n_embed, 
+                    vocab_size=self.vocab_size, 
+                    block_size=self.block_size, 
+                    bias=self.bias,   
+                    dropout=self.dropout)
 
     @torch.no_grad()
     def predict_next(self, x: torch.tensor, num_tokens: int) -> torch.tensor:
@@ -214,6 +224,57 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding): 
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
+    @classmethod
+    def load_pretrained_model(cls, model_type = 'gpt2'):
+    
+        assert model_type in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], f"Model type {model_type} not supported" 
+        
+        model_config = {
+            'gpt2': dict(n_layers=12, 
+                   n_heads=12, 
+                   n_embed=768, 
+                   vocab_size=50257, 
+                   block_size=1024, 
+                   bias=True,   
+                   dropout=0.1)  # 124M params GPT-2
+        }
+        
+        config = model_config[model_type]
+
+        print(f"Loading {model_type=}, with config{model_config=}")
+        # loading module from hugging face
+        remote_model = GPT2LMHeadModel.from_pretrained(model_type)
+        remote_weights = remote_model.state_dict()
+        remote_keys = remote_weights.keys()
+        remote_keys = [key for key in remote_keys if 'bias' not in key] ## remove bais wieghts, for simplicity
+        # loading local model
+        mogpt = GPT(config)
+        local_weights = mogpt.state_dict()
+        local_keys = list(local_weights.keys())
+        # removing bais wieghts
+        local_keys = [key for key in local_keys if 'bias' not in key]
+
+        ## GPT-2 uses conv1D for the following variables, so we require to transpose. 
+        ## this follows from https://github.com/karpathy/nanoGPT
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        # making sure we have the same wights
+        assert len(remote_keys) == len(local_keys), f"Local model has {len(local_keys)} keys, while loaded model has {len(remote_keys)} keys"
+        # setting-up the weights
+        for key in remote_keys:
+            if not any(key.endswith(w) for w in [".wte.weight", ".wpe.weight"]): 
+                if any(key.endswith(w) for w in transposed):
+                    assert remote_weights[key].shape[::-1] == local_weights[key].shape
+                    with torch.no_grad():
+                        local_weights[key].copy_(remote_weights[key].t())
+            elif key.endswith('.wte.weight'): 
+                assert remote_weights[key].shape == local_weights['token_embedding_table.weight'].shape, f"remote {key} weights of shape {remote_weights[key].shape}, local weights of shape{local_weights['token_embedding_table.weight'].shape}"
+                with torch.no_grad():
+                    local_weights['token_embedding_table.weight'].copy_(remote_weights[key])
+            elif key.endswith('.wpe.weight'):
+                assert remote_weights[key].shape == local_weights['pos_embedding_table.weight'].shape, f"remote {key} weights of shape {remote_weights[key].shape}, local weights of shape{local_weights['token_embedding_table.weight'].shape}"
+                with torch.no_grad(): 
+                    local_weights['pos_embedding_table.weight'].copy_(remote_weights[key])
+        return mogpt
 
 
 
