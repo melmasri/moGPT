@@ -28,6 +28,7 @@ def wandb_init(model):
         })
         if WANDB_KEY:
             os.environ["WANDB_API_KEY"] = WANDB_KEY
+            wandb.login(key=WANDB_KEY)
         wandb.watch(model)
         
 
