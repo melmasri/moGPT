@@ -26,6 +26,7 @@ class BigramLanguageModel(nn.Module):
 
     def __init__(self, vocab_size):
         super().__init__()
+        self.vocab_size = vocab_size
         self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
 
     def forward(self, idx):
@@ -40,6 +41,9 @@ class BigramLanguageModel(nn.Module):
             x_next = torch.multinomial(probs, num_samples=1)
             x = torch.cat((x, x_next), dim=1)
         return x
+    
+    def get_config(self):
+        return dict(vocab_size=self.vocab_size)
 
 
 class MultiHeadAttention(nn.Module):
