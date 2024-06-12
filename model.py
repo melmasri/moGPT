@@ -70,9 +70,8 @@ class MultiHeadAttention(nn.Module):
         self.c_proj = nn.Linear(self.n_embed, self.n_embed, bias=self.bias)
         self.att_dropout = nn.Dropout(self.dropout)
 
-        self.causal_mask = torch.tril(torch.ones(self.block_size, 
-                              self.block_size)).view(1, 1, self.block_size, self.block_size)
-        
+        self.register_buffer("causal_mask", torch.tril(torch.ones(self.block_size, self.block_size))
+                                        .view(1, 1, self.block_size, self.block_size))
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         B, T, C = x.size() # batch, block size, channels (n_embed)
@@ -260,6 +259,7 @@ class GPT(nn.Module):
         local_keys = list(local_weights.keys())
         # removing bais wieghts
         local_keys = [key for key in local_keys if 'bias' not in key]
+        local_keys = [key for key in local_keys if 'causal_mask' not in key]
 
         ## GPT-2 uses conv1D for the following variables, so we require to transpose. 
         ## this follows from https://github.com/karpathy/nanoGPT
